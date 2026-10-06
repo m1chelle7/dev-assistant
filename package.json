@@ -12,21 +12,11 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
-    "commands": [
-      {
-        "command": "ai-coding-assistant.askAI",
-        "title": "Ask Gemini"
-      },
-      {
-        "command": "ai-coding-assistant.resetApiKey",
-        "title": "Gemini: Reset API Key"
-      }
-    ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "gemini-sidebar-container",
-          "title": "Gemini Assistant",
+          "title": "Gemini AI",
           "icon": "$(sparkle)"
         }
       ]
@@ -34,9 +24,42 @@
     "views": {
       "gemini-sidebar-container": [
         {
-          "type": "webview",
           "id": "gemini-sidebar-view",
-          "name": "Gemini Chat"
+          "name": "Gemini Assistant",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "gemini.explainCode",
+        "title": "Gemini: Explain Selection"
+      },
+      {
+        "command": "gemini.refactorCode",
+        "title": "Gemini: Refactor & Optimize"
+      },
+      {
+        "command": "gemini.generateTests",
+        "title": "Gemini: Generate Unit Tests"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "gemini.explainCode",
+          "when": "editorHasSelection",
+          "group": "Gemini@1"
+        },
+        {
+          "command": "gemini.refactorCode",
+          "when": "editorHasSelection",
+          "group": "Gemini@2"
+        },
+        {
+          "command": "gemini.generateTests",
+          "when": "editorHasSelection",
+          "group": "Gemini@3"
         }
       ]
     }

@@ -1,106 +1,160 @@
-import * as vscode from 'vscode';
-import { GeminiProvider } from './GeminiProvider';
+import * as vscode from "vscode";
+import { GeminiProvider } from "./GeminiProvider";
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
-    public static readonly viewType = 'gemini-sidebar-view';
-    private _view?: vscode.WebviewView;
+  public static readonly viewType = "gemini-sidebar-view";
+  private _view?: vscode.WebviewView;
 
-    constructor(
-        private readonly _extensionUri: vscode.Uri,
-        private readonly _context: vscode.ExtensionContext
-    ) {}
+  constructor(
+    private readonly _extensionUri: vscode.Uri,
+    private readonly _context: vscode.ExtensionContext
+  ) {}
 
-    public resolveWebviewView(
-        webviewView: vscode.WebviewView,
-        context: vscode.WebviewViewResolveContext,
-        _token: vscode.CancellationToken
-    ) {
-        this._view = webviewView;
-
-        webviewView.webview.options = {
-            enableScripts: true,
-            localResourceRoots: [this._extensionUri]
-        };
-
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
-
-        // Handle messages sent from the sidebar HTML UI
-        webviewView.webview.onDidReceiveMessage(async (data) => {
-            switch (data.type) {
-                case 'askGemini': {
-                    const apiKey = await this._context.secrets.get('GEMINI_API_KEY');
-
-                    if (!apiKey) {
-                        this._view?.webview.postMessage({
-                            type: 'addResponse',
-                            text: '⚠️ No API Key found. Run command **Gemini: Reset API Key** to set one.'
-                        });
-                        return;
-                    }
-
-                    const provider = new GeminiProvider(apiKey);
-
-                    // Fetch highlighted text from current active editor if available
-                    const editor = vscode.window.activeTextEditor;
-                    const selectedText = editor
-                        ? editor.document.getText(editor.selection)
-                        : '';
-
-                    this._view?.webview.postMessage({
-                        type: 'setLoading',
-                        loading: true
-                    });
-
-                    // Signal webview to spawn a new empty response container for streaming
-                    this._view?.webview.postMessage({ type: 'streamStart' });
-
-                    try {
-                        await provider.ask(data.prompt, selectedText, (chunk: string) => {
-                            this._view?.webview.postMessage({
-                                type: 'streamChunk',
-                                chunk: chunk
-                            });
-                        });
-                    } catch (err: any) {
-                        this._view?.webview.postMessage({
-                            type: 'streamChunk',
-                            chunk: `\n\n⚠️ Error: ${err.message || 'Failed to complete request.'}`
-                        });
-                    } finally {
-                        this._view?.webview.postMessage({ type: 'streamEnd' });
-                        this._view?.webview.postMessage({
-                            type: 'setLoading',
-                            loading: false
-                        });
-                    }
-
-                    break;
-                }
-
-                case 'insertCode': {
-                    const editor = vscode.window.activeTextEditor;
-                    if (!editor) {
-                        vscode.window.showWarningMessage('No active editor open to insert code into.');
-                        return;
-                    }
-
-                    const codeToInsert = data.code;
-                    editor.edit((editBuilder) => {
-                        // Replace current selection or insert at cursor position
-                        if (!editor.selection.isEmpty) {
-                            editBuilder.replace(editor.selection, codeToInsert);
-                        } else {
-                            editBuilder.insert(editor.selection.active, codeToInsert);
-                        }
-                    });
-                    break;
-                }
-            }
-        });
+  public async executePromptFromCommand(promptText: string) {
+    if (!this._view) {
+      await vscode.commands.executeCommand("gemini-sidebar-view.focus");
+    } else {
+      this._view.show(true);
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview): string {
-        return /* html */ `
+    const apiKey = await this._context.secrets.get("GEMINI_API_KEY");
+    if (!apiKey) {
+      this._view?.webview.postMessage({
+        type: "addResponse",
+        text: "⚠️ No API Key found. Run command **Gemini: Reset API Key** to set one.",
+      });
+      return;
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    const selectedText = editor
+      ? editor.document.getText(editor.selection)
+      : "";
+
+    this._view?.webview.postMessage({
+      type: "addUserMessage",
+      text: promptText,
+    });
+
+    this._view?.webview.postMessage({
+      type: "setLoading",
+      loading: true,
+    });
+
+    this._view?.webview.postMessage({ type: "streamStart" });
+
+    const provider = new GeminiProvider(apiKey);
+
+    try {
+      await provider.ask(promptText, selectedText, (chunk: string) => {
+        this._view?.webview.postMessage({
+          type: "streamChunk",
+          chunk: chunk,
+        });
+      });
+    } catch (err: any) {
+      this._view?.webview.postMessage({
+        type: "streamChunk",
+        chunk: `\n\n⚠️ Error: ${err.message || "Failed to complete request."}`,
+      });
+    } finally {
+      this._view?.webview.postMessage({ type: "streamEnd" });
+      this._view?.webview.postMessage({
+        type: "setLoading",
+        loading: false,
+      });
+    }
+  }
+
+  public resolveWebviewView(
+    webviewView: vscode.WebviewView,
+    context: vscode.WebviewViewResolveContext,
+    _token: vscode.CancellationToken
+  ) {
+    this._view = webviewView;
+
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [this._extensionUri],
+    };
+
+    webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+
+    webviewView.webview.onDidReceiveMessage(async (data) => {
+      switch (data.type) {
+        case "askGemini": {
+          const apiKey = await this._context.secrets.get("GEMINI_API_KEY");
+
+          if (!apiKey) {
+            this._view?.webview.postMessage({
+              type: "addResponse",
+              text: "⚠️ No API Key found. Run command **Gemini: Reset API Key** to set one.",
+            });
+            return;
+          }
+
+          const provider = new GeminiProvider(apiKey);
+
+          const editor = vscode.window.activeTextEditor;
+          const selectedText = editor
+            ? editor.document.getText(editor.selection)
+            : "";
+
+          this._view?.webview.postMessage({
+            type: "setLoading",
+            loading: true,
+          });
+
+          this._view?.webview.postMessage({ type: "streamStart" });
+
+          try {
+            await provider.ask(data.prompt, selectedText, (chunk: string) => {
+              this._view?.webview.postMessage({
+                type: "streamChunk",
+                chunk: chunk,
+              });
+            });
+          } catch (err: any) {
+            this._view?.webview.postMessage({
+              type: "streamChunk",
+              chunk: `\n\n⚠️ Error: ${err.message || "Failed to complete request."}`,
+            });
+          } finally {
+            this._view?.webview.postMessage({ type: "streamEnd" });
+            this._view?.webview.postMessage({
+              type: "setLoading",
+              loading: false,
+            });
+          }
+
+          break;
+        }
+
+        case "insertCode": {
+          const editor = vscode.window.activeTextEditor;
+          if (!editor) {
+            vscode.window.showWarningMessage(
+              "No active editor open to insert code into."
+            );
+            return;
+          }
+
+          const codeToInsert = data.code;
+          editor.edit((editBuilder) => {
+            if (!editor.selection.isEmpty) {
+              editBuilder.replace(editor.selection, codeToInsert);
+            } else {
+              editBuilder.insert(editor.selection.active, codeToInsert);
+            }
+          });
+          break;
+        }
+      }
+    });
+  }
+
+  private _getHtmlForWebview(webview: vscode.Webview): string {
+    return /* html */ `
             <!DOCTYPE html>
             <html lang="en">
             <head>
@@ -112,7 +166,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     content="default-src 'none'; style-src 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'unsafe-inline' https://cdn.jsdelivr.net; connect-src https://cdn.jsdelivr.net;"
                 >
 
-                <!-- highlight.js theme -->
                 <link
                     rel="stylesheet"
                     href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css"
@@ -162,7 +215,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         border: 1px solid var(--vscode-widget-border);
                     }
 
-                    /* Markdown typography */
                     .ai-msg p { margin: 0 0 8px 0; }
                     .ai-msg p:last-child { margin-bottom: 0; }
                     .ai-msg ul, .ai-msg ol { margin: 6px 0; padding-left: 20px; }
@@ -175,7 +227,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     .ai-msg h2 { font-size: 1.2em; }
                     .ai-msg h3 { font-size: 1.1em; }
 
-                    /* Inline code */
                     .ai-msg code {
                         font-family: var(--vscode-editor-font-family);
                         font-size: 0.9em;
@@ -185,7 +236,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         border-radius: 3px;
                     }
 
-                    /* Code block wrapper and toolbar */
                     .code-wrapper {
                         position: relative;
                         margin: 8px 0;
@@ -235,7 +285,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         white-space: pre;
                     }
 
-                    /* Blockquotes & Tables */
                     .ai-msg blockquote {
                         margin: 8px 0;
                         padding-left: 10px;
@@ -307,13 +356,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     <button id="send-btn">Send</button>
                 </div>
 
-                <!-- Markdown parser -->
                 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
-                <!-- Syntax highlighting -->
                 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/lib/highlight.min.js"></script>
-
-                <!-- HTML sanitization -->
                 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
 
                 <script>
@@ -330,6 +374,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
                     let currentAiMsgElement = null;
                     let currentRawMarkdown = '';
+                    let renderScheduled = false;
 
                     sendBtn.addEventListener('click', () => {
                         const text = promptInput.value.trim();
@@ -355,6 +400,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         const message = event.data;
 
                         switch (message.type) {
+                            case 'addUserMessage':
+                                appendUserMessage(message.text);
+                                break;
+
                             case 'setLoading':
                                 sendBtn.disabled = message.loading;
                                 promptInput.disabled = message.loading;
@@ -372,8 +421,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                             case 'streamChunk':
                                 if (currentAiMsgElement) {
                                     currentRawMarkdown += message.chunk;
-                                    currentAiMsgElement.innerText = currentRawMarkdown;
-                                    chatHistory.scrollTop = chatHistory.scrollHeight;
+
+                                    // Render throttle using requestAnimationFrame
+                                    if (!renderScheduled) {
+                                        renderScheduled = true;
+                                        requestAnimationFrame(() => {
+                                            if (currentAiMsgElement) {
+                                                currentAiMsgElement.innerText = currentRawMarkdown;
+                                                chatHistory.scrollTop = chatHistory.scrollHeight;
+                                            }
+                                            renderScheduled = false;
+                                        });
+                                    }
                                 }
                                 break;
 
@@ -406,14 +465,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         const parsedHtml = marked.parse(rawText);
                         element.innerHTML = DOMPurify.sanitize(parsedHtml);
 
-                        // Highlight code blocks and inject Copy/Insert toolbar
                         element.querySelectorAll('pre').forEach((preBlock) => {
                             const codeBlock = preBlock.querySelector('code');
                             if (codeBlock) {
                                 hljs.highlightElement(codeBlock);
                             }
 
-                            // Wrap pre in wrapper with toolbar
                             const wrapper = document.createElement('div');
                             wrapper.className = 'code-wrapper';
 
@@ -455,5 +512,5 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             </body>
             </html>
         `;
-    }
+  }
 }

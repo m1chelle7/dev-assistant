@@ -15,17 +15,31 @@
     "commands": [
       {
         "command": "ai-coding-assistant.askAI",
-        "title": "Ask AI Coding Assistant"
+        "title": "Ask Gemini"
+      },
+      {
+        "command": "ai-coding-assistant.resetApiKey",
+        "title": "Gemini: Reset API Key"
       }
     ],
-    "keybindings": [
-      {
-        "command": "ai-coding-assistant.askAI",
-        "key": "ctrl+shift+a",
-        "mac": "cmd+shift+a",
-        "when": "editorTextFocus"
-      }
-    ]
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gemini-sidebar-container",
+          "title": "Gemini Assistant",
+          "icon": "$(sparkle)"
+        }
+      ]
+    },
+    "views": {
+      "gemini-sidebar-container": [
+        {
+          "type": "webview",
+          "id": "gemini-sidebar-view",
+          "name": "Gemini Chat"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",

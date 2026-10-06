@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
+import { GeminiProvider } from './providers/GeminiProvider';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('AI Coding Assistant is active!');
 
     const disposable = vscode.commands.registerCommand('ai-coding-assistant.askAI', async () => {
-        // 1. Get active text editor
         const editor = vscode.window.activeTextEditor;
 
         if (!editor) {
@@ -12,7 +12,6 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
 
-        // 2. Extract selected code
         const selectedText = editor.document.getText(editor.selection);
 
         if (!selectedText || selectedText.trim() === '') {
@@ -20,19 +19,46 @@ export function activate(context: vscode.ExtensionContext) {
             return;
         }
 
-        // 3. Prompt user for their question using VS Code InputBox
+        // 1. Check for stored API key in secret storage
+        let apiKey = await context.secrets.get('GEMINI_API_KEY');
+
+        if (!apiKey) {
+            apiKey = await vscode.window.showInputBox({
+                prompt: 'Enter your Gemini API Key',
+                placeHolder: 'AIzaSy...',
+                password: true,
+                ignoreFocusOut: true
+            });
+
+            if (!apiKey) {
+                vscode.window.showWarningMessage('API key is required to use Gemini.');
+                return;
+            }
+
+            await context.secrets.store('GEMINI_API_KEY', apiKey);
+        }
+
+        // 2. Get user question
         const userQuestion = await vscode.window.showInputBox({
             prompt: 'Ask AI a question about your selected code',
             placeHolder: 'e.g., Why could this return undefined?'
         });
 
-        // Handle case where user presses Esc or leaves input blank
         if (!userQuestion || userQuestion.trim() === '') {
             return;
         }
 
-        // 4. Temporary verification: output both question and selected code
-        vscode.window.showInformationMessage(`Question: "\({userQuestion}" | Code length:\){selectedText.length} chars`);
+        // 3. Call live Gemini API
+        const provider = new GeminiProvider(apiKey);
+        
+        vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: "Asking Gemini...",
+            cancellable: false
+        }, async () => {
+            const response = await provider.ask(userQuestion, selectedText);
+            vscode.window.showInformationMessage(response, { modal: true });
+        });
     });
 
     context.subscriptions.push(disposable);

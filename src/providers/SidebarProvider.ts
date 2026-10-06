@@ -33,7 +33,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     if (!apiKey) {
                         this._view?.webview.postMessage({
                             type: 'addResponse',
-                            text: '⚠️️ No API Key found. Run command **Gemini: Reset API Key** to set one.'
+                            text: '⚠️ No API Key found. Run command **Gemini: Reset API Key** to set one.'
                         });
                         return;
                     }
@@ -74,6 +74,25 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         });
                     }
 
+                    break;
+                }
+
+                case 'insertCode': {
+                    const editor = vscode.window.activeTextEditor;
+                    if (!editor) {
+                        vscode.window.showWarningMessage('No active editor open to insert code into.');
+                        return;
+                    }
+
+                    const codeToInsert = data.code;
+                    editor.edit((editBuilder) => {
+                        // Replace current selection or insert at cursor position
+                        if (!editor.selection.isEmpty) {
+                            editBuilder.replace(editor.selection, codeToInsert);
+                        } else {
+                            editBuilder.insert(editor.selection.active, codeToInsert);
+                        }
+                    });
                     break;
                 }
             }
@@ -143,35 +162,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         border: 1px solid var(--vscode-widget-border);
                     }
 
-                    /* Markdown paragraphs */
-                    .ai-msg p {
-                        margin: 0 0 8px 0;
-                    }
-
-                    .ai-msg p:last-child {
-                        margin-bottom: 0;
-                    }
-
-                    /* Markdown lists */
-                    .ai-msg ul,
-                    .ai-msg ol {
-                        margin: 6px 0;
-                        padding-left: 20px;
-                    }
-
-                    .ai-msg li {
-                        margin: 3px 0;
-                    }
-
-                    /* Markdown headings */
-                    .ai-msg h1,
-                    .ai-msg h2,
-                    .ai-msg h3,
-                    .ai-msg h4 {
+                    /* Markdown typography */
+                    .ai-msg p { margin: 0 0 8px 0; }
+                    .ai-msg p:last-child { margin-bottom: 0; }
+                    .ai-msg ul, .ai-msg ol { margin: 6px 0; padding-left: 20px; }
+                    .ai-msg li { margin: 3px 0; }
+                    .ai-msg h1, .ai-msg h2, .ai-msg h3, .ai-msg h4 {
                         margin: 10px 0 6px 0;
                         color: var(--vscode-editor-foreground);
                     }
-
                     .ai-msg h1 { font-size: 1.3em; }
                     .ai-msg h2 { font-size: 1.2em; }
                     .ai-msg h3 { font-size: 1.1em; }
@@ -186,17 +185,48 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         border-radius: 3px;
                     }
 
-                    /* Code blocks */
-                    .ai-msg pre {
+                    /* Code block wrapper and toolbar */
+                    .code-wrapper {
+                        position: relative;
                         margin: 8px 0;
-                        padding: 10px;
-                        overflow-x: auto;
-                        border-radius: 5px;
-                        background: var(--vscode-textCodeBlock-background);
+                        border-radius: 6px;
+                        overflow: hidden;
                         border: 1px solid var(--vscode-widget-border);
+                        background: var(--vscode-textCodeBlock-background);
                     }
 
-                    .ai-msg pre code {
+                    .code-toolbar {
+                        display: flex;
+                        justify-content: flex-end;
+                        gap: 6px;
+                        padding: 4px 8px;
+                        background: var(--vscode-editor-inactiveSelectionBackground);
+                        border-bottom: 1px solid var(--vscode-widget-border);
+                    }
+
+                    .code-btn {
+                        background: var(--vscode-button-secondaryBackground, #3a3d41);
+                        color: var(--vscode-button-secondaryForeground, #ffffff);
+                        border: none;
+                        padding: 2px 8px;
+                        font-size: 11px;
+                        border-radius: 3px;
+                        cursor: pointer;
+                    }
+
+                    .code-btn:hover {
+                        background: var(--vscode-button-secondaryHoverBackground, #45494e);
+                    }
+
+                    .code-wrapper pre {
+                        margin: 0;
+                        padding: 10px;
+                        overflow-x: auto;
+                        border: none;
+                        background: transparent;
+                    }
+
+                    .code-wrapper pre code {
                         display: block;
                         padding: 0;
                         background: transparent;
@@ -205,7 +235,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         white-space: pre;
                     }
 
-                    /* Blockquotes */
+                    /* Blockquotes & Tables */
                     .ai-msg blockquote {
                         margin: 8px 0;
                         padding-left: 10px;
@@ -213,25 +243,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         color: var(--vscode-descriptionForeground);
                     }
 
-                    /* Links */
-                    .ai-msg a {
-                        color: var(--vscode-textLink-foreground);
-                    }
+                    .ai-msg a { color: var(--vscode-textLink-foreground); }
+                    .ai-msg strong { font-weight: 600; }
 
-                    /* Bold text */
-                    .ai-msg strong {
-                        font-weight: 600;
-                    }
-
-                    /* Markdown tables */
                     .ai-msg table {
                         border-collapse: collapse;
                         width: 100%;
                         margin: 8px 0;
                     }
 
-                    .ai-msg th,
-                    .ai-msg td {
+                    .ai-msg th, .ai-msg td {
                         border: 1px solid var(--vscode-widget-border);
                         padding: 5px 7px;
                         text-align: left;
@@ -257,9 +278,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         font-family: inherit;
                     }
 
-                    textarea:disabled {
-                        opacity: 0.6;
-                    }
+                    textarea:disabled { opacity: 0.6; }
 
                     button {
                         background: var(--vscode-button-background);
@@ -270,14 +289,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         cursor: pointer;
                     }
 
-                    button:hover {
-                        background: var(--vscode-button-hoverBackground);
-                    }
-
-                    button:disabled {
-                        opacity: 0.6;
-                        cursor: default;
-                    }
+                    button:hover { background: var(--vscode-button-hoverBackground); }
+                    button:disabled { opacity: 0.6; cursor: default; }
                 </style>
             </head>
 
@@ -320,7 +333,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
                     sendBtn.addEventListener('click', () => {
                         const text = promptInput.value.trim();
-
                         if (!text) return;
 
                         appendUserMessage(text);
@@ -332,7 +344,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         });
                     });
 
-                    // Enter submits prompt, Shift + Enter adds newline
                     promptInput.addEventListener('keydown', (event) => {
                         if (event.key === 'Enter' && !event.shiftKey) {
                             event.preventDefault();
@@ -368,19 +379,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
                             case 'streamEnd':
                                 if (currentAiMsgElement) {
-                                    const parsedHtml = marked.parse(currentRawMarkdown);
-                                    currentAiMsgElement.innerHTML = DOMPurify.sanitize(parsedHtml);
-                                    currentAiMsgElement.querySelectorAll('pre code').forEach((block) => {
-                                        hljs.highlightElement(block);
-                                    });
-                                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                                    renderFormattedAiMessage(currentAiMsgElement, currentRawMarkdown);
                                 }
                                 currentAiMsgElement = null;
                                 currentRawMarkdown = '';
                                 break;
 
                             case 'addResponse':
-                                appendAiMessage(message.text);
+                                const div = document.createElement('div');
+                                div.className = 'msg ai-msg';
+                                chatHistory.appendChild(div);
+                                renderFormattedAiMessage(div, message.text);
                                 break;
                         }
                     });
@@ -393,15 +402,53 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         chatHistory.scrollTop = chatHistory.scrollHeight;
                     }
 
-                    function appendAiMessage(text) {
-                        const div = document.createElement('div');
-                        div.className = 'msg ai-msg';
-                        const markdownHtml = marked.parse(text);
-                        div.innerHTML = DOMPurify.sanitize(markdownHtml);
-                        div.querySelectorAll('pre code').forEach((block) => {
-                            hljs.highlightElement(block);
+                    function renderFormattedAiMessage(element, rawText) {
+                        const parsedHtml = marked.parse(rawText);
+                        element.innerHTML = DOMPurify.sanitize(parsedHtml);
+
+                        // Highlight code blocks and inject Copy/Insert toolbar
+                        element.querySelectorAll('pre').forEach((preBlock) => {
+                            const codeBlock = preBlock.querySelector('code');
+                            if (codeBlock) {
+                                hljs.highlightElement(codeBlock);
+                            }
+
+                            // Wrap pre in wrapper with toolbar
+                            const wrapper = document.createElement('div');
+                            wrapper.className = 'code-wrapper';
+
+                            const toolbar = document.createElement('div');
+                            toolbar.className = 'code-toolbar';
+
+                            const copyBtn = document.createElement('button');
+                            copyBtn.className = 'code-btn';
+                            copyBtn.innerText = 'Copy';
+                            copyBtn.addEventListener('click', () => {
+                                const codeText = codeBlock ? codeBlock.innerText : preBlock.innerText;
+                                navigator.clipboard.writeText(codeText);
+                                copyBtn.innerText = 'Copied!';
+                                setTimeout(() => copyBtn.innerText = 'Copy', 1500);
+                            });
+
+                            const insertBtn = document.createElement('button');
+                            insertBtn.className = 'code-btn';
+                            insertBtn.innerText = 'Insert';
+                            insertBtn.addEventListener('click', () => {
+                                const codeText = codeBlock ? codeBlock.innerText : preBlock.innerText;
+                                vscode.postMessage({
+                                    type: 'insertCode',
+                                    code: codeText
+                                });
+                            });
+
+                            toolbar.appendChild(copyBtn);
+                            toolbar.appendChild(insertBtn);
+
+                            preBlock.parentNode.insertBefore(wrapper, preBlock);
+                            wrapper.appendChild(toolbar);
+                            wrapper.appendChild(preBlock);
                         });
-                        chatHistory.appendChild(div);
+
                         chatHistory.scrollTop = chatHistory.scrollHeight;
                     }
                 </script>

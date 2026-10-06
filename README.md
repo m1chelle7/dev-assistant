@@ -1,6 +1,6 @@
-# ai-coding-assistent README
+# dev-assistent README
 
-This is the README for your extension "ai-coding-assistent". After writing up a brief description, we recommend including the following sections.
+This is the README for your extension "dev-assistent". After writing up a brief description, we recommend including the following sections.
 
 ## Features
 

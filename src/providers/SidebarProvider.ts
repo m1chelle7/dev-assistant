@@ -33,7 +33,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     if (!apiKey) {
                         this._view?.webview.postMessage({
                             type: 'addResponse',
-                            text: '⚠️ No API Key found. Run command **Gemini: Reset API Key** to set one.'
+                            text: '⚠️️ No API Key found. Run command **Gemini: Reset API Key** to set one.'
                         });
                         return;
                     }
@@ -51,17 +51,28 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         loading: true
                     });
 
-                    const response = await provider.ask(data.prompt, selectedText);
+                    // Signal webview to spawn a new empty response container for streaming
+                    this._view?.webview.postMessage({ type: 'streamStart' });
 
-                    this._view?.webview.postMessage({
-                        type: 'setLoading',
-                        loading: false
-                    });
-
-                    this._view?.webview.postMessage({
-                        type: 'addResponse',
-                        text: response
-                    });
+                    try {
+                        await provider.ask(data.prompt, selectedText, (chunk: string) => {
+                            this._view?.webview.postMessage({
+                                type: 'streamChunk',
+                                chunk: chunk
+                            });
+                        });
+                    } catch (err: any) {
+                        this._view?.webview.postMessage({
+                            type: 'streamChunk',
+                            chunk: `\n\n⚠️ Error: ${err.message || 'Failed to complete request.'}`
+                        });
+                    } finally {
+                        this._view?.webview.postMessage({ type: 'streamEnd' });
+                        this._view?.webview.postMessage({
+                            type: 'setLoading',
+                            loading: false
+                        });
+                    }
 
                     break;
                 }
@@ -161,17 +172,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         color: var(--vscode-editor-foreground);
                     }
 
-                    .ai-msg h1 {
-                        font-size: 1.3em;
-                    }
-
-                    .ai-msg h2 {
-                        font-size: 1.2em;
-                    }
-
-                    .ai-msg h3 {
-                        font-size: 1.1em;
-                    }
+                    .ai-msg h1 { font-size: 1.3em; }
+                    .ai-msg h2 { font-size: 1.2em; }
+                    .ai-msg h3 { font-size: 1.1em; }
 
                     /* Inline code */
                     .ai-msg code {
@@ -312,12 +315,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     const promptInput = document.getElementById('prompt');
                     const sendBtn = document.getElementById('send-btn');
 
+                    let currentAiMsgElement = null;
+                    let currentRawMarkdown = '';
+
                     sendBtn.addEventListener('click', () => {
                         const text = promptInput.value.trim();
 
                         if (!text) return;
 
-                        appendMessage('user-msg', text);
+                        appendUserMessage(text);
                         promptInput.value = '';
 
                         vscode.postMessage({
@@ -326,8 +332,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         });
                     });
 
-                    // Enter submits the prompt.
-                    // Shift + Enter creates a new line.
+                    // Enter submits prompt, Shift + Enter adds newline
                     promptInput.addEventListener('keydown', (event) => {
                         if (event.key === 'Enter' && !event.shiftKey) {
                             event.preventDefault();
@@ -345,28 +350,57 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                                 sendBtn.innerText = message.loading ? '...' : 'Send';
                                 break;
 
+                            case 'streamStart':
+                                currentRawMarkdown = '';
+                                currentAiMsgElement = document.createElement('div');
+                                currentAiMsgElement.className = 'msg ai-msg';
+                                chatHistory.appendChild(currentAiMsgElement);
+                                chatHistory.scrollTop = chatHistory.scrollHeight;
+                                break;
+
+                            case 'streamChunk':
+                                if (currentAiMsgElement) {
+                                    currentRawMarkdown += message.chunk;
+                                    currentAiMsgElement.innerText = currentRawMarkdown;
+                                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                                }
+                                break;
+
+                            case 'streamEnd':
+                                if (currentAiMsgElement) {
+                                    const parsedHtml = marked.parse(currentRawMarkdown);
+                                    currentAiMsgElement.innerHTML = DOMPurify.sanitize(parsedHtml);
+                                    currentAiMsgElement.querySelectorAll('pre code').forEach((block) => {
+                                        hljs.highlightElement(block);
+                                    });
+                                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                                }
+                                currentAiMsgElement = null;
+                                currentRawMarkdown = '';
+                                break;
+
                             case 'addResponse':
-                                appendMessage('ai-msg', message.text);
+                                appendAiMessage(message.text);
                                 break;
                         }
                     });
 
-                    function appendMessage(className, text) {
+                    function appendUserMessage(text) {
                         const div = document.createElement('div');
-                        div.className = 'msg ' + className;
+                        div.className = 'msg user-msg';
+                        div.innerText = text;
+                        chatHistory.appendChild(div);
+                        chatHistory.scrollTop = chatHistory.scrollHeight;
+                    }
 
-                        if (className === 'ai-msg') {
-                            const markdownHtml = marked.parse(text);
-
-                            div.innerHTML = DOMPurify.sanitize(markdownHtml);
-
-                            div.querySelectorAll('pre code').forEach((block) => {
-                                hljs.highlightElement(block);
-                            });
-                        } else {
-                            div.innerText = text;
-                        }
-
+                    function appendAiMessage(text) {
+                        const div = document.createElement('div');
+                        div.className = 'msg ai-msg';
+                        const markdownHtml = marked.parse(text);
+                        div.innerHTML = DOMPurify.sanitize(markdownHtml);
+                        div.querySelectorAll('pre code').forEach((block) => {
+                            hljs.highlightElement(block);
+                        });
                         chatHistory.appendChild(div);
                         chatHistory.scrollTop = chatHistory.scrollHeight;
                     }

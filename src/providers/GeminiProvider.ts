@@ -9,7 +9,11 @@ export class GeminiProvider implements AIProvider {
         this.apiKey = apiKey;
     }
 
-    async ask(question: string, code: string): Promise<string> {
+    async ask(
+        question: string,
+        code: string,
+        onChunk?: (chunk: string) => void
+    ): Promise<string> {
         const prompt = `You are an expert software developer assisting inside VS Code.
 Analyze the following highlighted code and answer the user's question concisely.
 
@@ -21,39 +25,58 @@ ${code}
 User Question: ${question}`;
 
         try {
-            return await this._generateWithRetry(this.primaryModel, prompt);
+            return await this._generateWithRetry(this.primaryModel, prompt, onChunk);
         } catch (error: any) {
-            console.warn(`Primary model (\({this.primaryModel}) high demand/capacity failure. Trying fallback model (\){this.fallbackModel})...`);
+            console.warn(`Primary model (${this.primaryModel}) failed. Trying fallback model (${this.fallbackModel})...`);
 
             try {
-                return await this._generateWithRetry(this.fallbackModel, prompt);
+                return await this._generateWithRetry(this.fallbackModel, prompt, onChunk);
             } catch (fallbackError: any) {
-                return `⚠️ **Gemini Service Unavailable**: Google's servers are experiencing high demand right now. Please try again in a few moments.`;
+                const errorMsg = `⚠️ **Gemini Service Unavailable**: Google's servers are experiencing high demand right now. Please try again in a few moments.`;
+                if (onChunk) {
+                    onChunk(errorMsg);
+                }
+                return errorMsg;
             }
         }
     }
 
-    private async _generateWithRetry(modelName: string, prompt: string, maxRetries = 3): Promise<string> {
+    private async _generateWithRetry(
+        modelName: string,
+        prompt: string,
+        onChunk?: (chunk: string) => void,
+        maxRetries = 3
+    ): Promise<string> {
         let delayMs = 1500;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                // Dynamically load ESM SDK inside CommonJS runtime
                 const { GoogleGenAI } = await import('@google/genai');
                 const ai = new GoogleGenAI({ apiKey: this.apiKey });
 
-                const response = await ai.models.generateContent({
+                const responseStream = await ai.models.generateContentStream({
                     model: modelName,
                     contents: prompt,
                 });
 
-                return response.text || 'No response returned from Gemini.';
+                let fullText = '';
+                for await (const chunk of responseStream) {
+                    const text = chunk.text;
+                    if (text) {
+                        fullText += text;
+                        if (onChunk) {
+                            onChunk(text);
+                        }
+                    }
+                }
+
+                return fullText || 'No response returned from Gemini.';
             } catch (error: any) {
                 const errString = error?.message || String(error);
-                const isCapacityError = 
-                    errString.includes('503') || 
-                    errString.includes('429') || 
-                    errString.includes('UNAVAILABLE') || 
+                const isCapacityError =
+                    errString.includes('503') ||
+                    errString.includes('429') ||
+                    errString.includes('UNAVAILABLE') ||
                     errString.includes('high demand');
 
                 if (isCapacityError && attempt < maxRetries) {
@@ -67,6 +90,6 @@ User Question: ${question}`;
             }
         }
 
-        throw new Error(`Failed after \({maxRetries} retries on\){modelName}.`);
+        throw new Error(`Failed after ${maxRetries} retries on ${modelName}.`);
     }
 }

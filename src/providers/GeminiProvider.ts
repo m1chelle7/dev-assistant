@@ -12,30 +12,29 @@ export class GeminiProvider implements AIProvider {
   async ask(
     question: string,
     code: string,
-    onChunk?: (chunk: string) => void
+    onChunk?: (chunk: string) => void,
   ): Promise<string> {
-    const prompt = `You are an expert software developer assisting inside VS Code.
-Analyze the following highlighted code and answer the user's question concisely.
+    // 1. Separate system instruction for clean context caching
+    const systemInstruction = "You are an expert software developer assisting inside VS Code. Analyze the highlighted code and answer the user's question concisely.";
 
-Highlighted Code:
-\`\`\`
-${code}
-\`\`\`
-
-User Question: ${question}`;
+    // 2. Format user contents cleanly
+    const prompt = code 
+      ? `Highlighted Code:\n\`\`\`\n\({code}\n\`\`\`\n\nUser Question:\){question}`
+      : `User Question: ${question}`;
 
     try {
-      return await this._generateWithRetry(this.primaryModel, prompt, onChunk);
+      return await this._generateWithRetry(this.primaryModel, prompt, systemInstruction, onChunk);
     } catch (error: any) {
       console.warn(
-        `Primary model (${this.primaryModel}) failed. Trying fallback model (${this.fallbackModel})...`
+        `Primary model (\({this.primaryModel}) failed. Trying fallback model (\){this.fallbackModel})...`,
       );
 
       try {
         return await this._generateWithRetry(
           this.fallbackModel,
           prompt,
-          onChunk
+          systemInstruction,
+          onChunk,
         );
       } catch (fallbackError: any) {
         const errorMsg = `⚠️ **Gemini Service Unavailable**: Google's servers are experiencing high demand right now. Please try again in a few moments.`;
@@ -50,8 +49,9 @@ User Question: ${question}`;
   private async _generateWithRetry(
     modelName: string,
     prompt: string,
+    systemInstruction: string,
     onChunk?: (chunk: string) => void,
-    maxRetries = 3
+    maxRetries = 3,
   ): Promise<string> {
     let delayMs = 1500;
 
@@ -60,14 +60,20 @@ User Question: ${question}`;
         const { GoogleGenAI } = await import("@google/genai");
         const ai = new GoogleGenAI({ apiKey: this.apiKey });
 
+        // 3. CONFIG OBJECT GOES HERE (Output limits, temperature, system instruction)
         const responseStream = await ai.models.generateContentStream({
           model: modelName,
           contents: prompt,
+          config: {
+            systemInstruction: systemInstruction,
+            maxOutputTokens: 2048,
+            temperature: 0.2,
+          }
         });
 
         let fullText = "";
-
-        // 40ms buffer prevents spamming VS Code's Extension Host -> Webview IPC channel
+        
+        // 4. 40MS CHUNK BUFFERING GOES HERE (Prevents IPC bridge throttling)
         let buffer = "";
         let lastFlush = Date.now();
 
@@ -88,7 +94,7 @@ User Question: ${question}`;
           }
         }
 
-        // Flush remaining buffer
+        // Flush remaining buffer data
         if (buffer.length > 0 && onChunk) {
           onChunk(buffer);
         }
@@ -113,6 +119,6 @@ User Question: ${question}`;
       }
     }
 
-    throw new Error(`Failed after ${maxRetries} retries on ${modelName}.`);
+    throw new Error(`Failed after \({maxRetries} retries on\){modelName}.`);
   }
 }
